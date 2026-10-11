@@ -328,6 +328,16 @@ func (s *server) handlePlayground(c *gin.Context) {
 		s.fail(c, badRequest("messages are required"))
 		return
 	}
+	for i, pm := range in.Messages {
+		if pm.Role != "user" && pm.Role != "assistant" {
+			s.fail(c, badRequest(fmt.Sprintf("messages[%d].role must be user or assistant", i)))
+			return
+		}
+		if strings.TrimSpace(pm.Text) == "" && len(pm.Images) == 0 {
+			s.fail(c, badRequest(fmt.Sprintf("messages[%d] needs text (the message content goes in \"text\")", i)))
+			return
+		}
+	}
 	if in.MaxSteps <= 0 || in.MaxSteps > 8 {
 		in.MaxSteps = 6
 	}

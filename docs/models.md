@@ -61,6 +61,7 @@ Use **Discover on \<provider\>** in Settings → Models to list the models your 
 ## What to expect
 
 - **Speed:** with a local 27B model, classifying and scoring a batch of new items takes minutes, and a deep research report can take 15–25 minutes. Hosted models are much faster.
+- **Deep research time with a local model:** each tool round can take a minute or more, so the default 15 minutes of gathering spread over several sub-questions leaves each only a few rounds. Raise the research route's **time limit** (up to 30 minutes) in Settings → Routes for more thorough reports.
 - **Research quality depends on search as much as on the model.** The bundled SearXNG uses only engines whose terms allow automated queries (encyclopedias, academic indexes, Stack Exchange, GitHub). For vendor documentation, blogs, and news, configure Brave or Google Programmable Search in Settings, or ask questions your collected items can answer.
 - **Review citations.** Deep research checks each key claim against excerpts of its cited sources and lists unsupported claims separately, but the check is a model's judgment, and a small model is a looser judge.
 

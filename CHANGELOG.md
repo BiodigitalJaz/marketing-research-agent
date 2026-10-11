@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Research:** deep research gives each planned sub-question an even share of the gathering time, so a slow local model researches every sub-question instead of skipping the last ones.
+- **Monitors:** Run now on an enabled monitor moves its next scheduled run to the following cron tick, so turning a monitor on and clicking Run now no longer starts two runs whose progress overlaps.
+- **Playground:** messages with no text or an unknown role are rejected with a clear error instead of reaching the model empty.
+
 ## v0.1.0 (2026-10-11)
 
 First public release.

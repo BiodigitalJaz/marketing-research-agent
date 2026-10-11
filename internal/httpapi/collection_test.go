@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -99,6 +100,13 @@ func TestSourcesMonitorsAndItems(t *testing.T) {
 	}
 	if code, _ := ed.do(http.MethodPost, "/monitors/"+mon.ID+"/run", nil); code != http.StatusAccepted {
 		t.Fatalf("run now = %d", code)
+	}
+	// Run now counts as the due run: the next scheduled one moves to the
+	// following cron tick instead of starting moments later.
+	var next time.Time
+	_ = e.pool.QueryRow(ctx, "SELECT next_run_at FROM monitors WHERE id = $1", mon.ID).Scan(&next)
+	if time.Until(next) < time.Minute {
+		t.Errorf("next_run_at after run now = %v, want the next hourly tick", next)
 	}
 	var jobs int
 	_ = e.pool.QueryRow(ctx, "SELECT count(*) FROM river_job WHERE kind = 'collect_monitor'").Scan(&jobs)
