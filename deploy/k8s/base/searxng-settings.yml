@@ -1,0 +1,57 @@
+# SearXNG for marketing-research-agent: an internal search backend (JSON API).
+#
+# Engine policy: only engines that use official APIs or whose terms permit
+# automated queries are enabled. Engines that scrape search-engine result
+# pages (google, bing, duckduckgo, brave, qwant, startpage, mojeek) are
+# deliberately excluded: scraping them conflicts with their terms and with
+# the project's "no scraping against a platform's terms" rule.
+# Adding them to keep_only is an explicit
+# operator decision. `hackernews` is excluded because it calls Algolia;
+# HN is collected through its official API instead.
+use_default_settings:
+  engines:
+    keep_only:
+      - wikipedia
+      - wikidata
+      - wikinews
+      - arxiv
+      - crossref
+      - openalex
+      - pubmed
+      - semantic scholar
+      - stackoverflow
+      - askubuntu
+      - superuser
+      - github
+
+general:
+  instance_name: marketing-research-agent-search
+  enable_metrics: false
+
+server:
+  # Overridden by the SEARXNG_SECRET env var (Kubernetes Secret / compose).
+  secret_key: "change-me-via-SEARXNG_SECRET"
+  # Reachable only inside the cluster/compose network by the worker and api.
+  limiter: false
+  image_proxy: false
+  public_instance: false
+
+search:
+  formats:
+    - html
+    - json
+  safe_search: 0
+  default_lang: "en"
+
+# Some kept engines ship disabled; enable them explicitly.
+engines:
+  - name: crossref
+    disabled: false
+  - name: openalex
+    disabled: false
+
+# Bound engine latency so the JSON API answers within ~10s even when an
+# engine is slow (callers time out at 30s).
+outgoing:
+  request_timeout: 4.0
+  max_request_timeout: 8.0

@@ -1,0 +1,53 @@
+# Cluster bootstrap config (mounted from a ConfigMap). Secrets and the
+# database URL come from the `research-agent-env` Secret via env vars:
+# RESEARCH_AGENT_DATABASE_URL, ANTHROPIC_API_KEY, OPENAI_API_KEY,
+# BRAVE_API_KEY, RESEARCH_AGENT_SECRETS_KEY (encrypts keys entered in Settings),
+# and LOCAL_LLM_BASE_URL (an OpenAI-compatible server for local models).
+# Providers, routes, embeddings, search, and mode only seed a new workspace;
+# after that they are edited in Settings. Override this file in your overlay
+# (configMapGenerator with behavior: replace) rather than editing it.
+server:
+  addr: ":8080"
+  shutdown_timeout: 15s
+database:
+  url: ""            # set via RESEARCH_AGENT_DATABASE_URL
+worker:
+  max_workers: 10
+  pipeline_workers: 2   # LLM-bound scoring jobs; keep low for a single local GPU
+  shutdown_timeout: 30s
+log:
+  level: info
+  format: json
+mode:
+  offline: false     # local-only LLM mode; editable in Settings
+providers:
+  - id: claude
+    kind: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+  - id: openai
+    kind: openai_compat
+    base_url: "https://api.openai.com/v1"
+    api_key_env: OPENAI_API_KEY
+  - id: local
+    kind: openai_compat
+    base_url: "${LOCAL_LLM_BASE_URL:-http://ollama:11434/v1}"   # any OpenAI-compatible server
+    local: true
+routes:
+  classify: { provider: claude, model: claude-haiku-4-5-20251001, fallback: { provider: local, model: "qwen3:14b" } }
+  score:    { provider: claude, model: claude-haiku-4-5-20251001, fallback: { provider: local, model: "qwen3:14b" } }
+  draft:    { provider: claude, model: claude-sonnet-5-5,          fallback: { provider: local, model: "qwen3:32b" } }
+  research: { provider: claude, model: claude-sonnet-5-5,          fallback: { provider: local, model: "qwen3:32b" } }
+  summarize: { provider: claude, model: claude-haiku-4-5-20251001, fallback: { provider: local, model: "qwen3:14b" } }
+embeddings:
+  provider: local
+  model: nomic-embed-text
+  dimensions: 768
+search:
+  backend: searxng                      # zero-cost default; google_pse or brave are optional
+  searxng_url: "${SEARXNG_URL:-http://searxng:8080}"
+  brave:
+    api_key_env: BRAVE_API_KEY          # only used when backend is brave
+retention:
+  raw_items_days: 90
+inbox:
+  timezone: "UTC"   # IANA name, e.g. America/New_York; the daily inbox is built from 06:00 local time

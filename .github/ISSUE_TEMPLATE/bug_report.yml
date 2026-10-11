@@ -1,0 +1,29 @@
+name: Bug report
+description: Something doesn't work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please don't include API keys, tokens, or private data. For security issues, use **Security → Report a vulnerability** instead of an issue.
+  - type: textarea
+    id: what
+    attributes: { label: What happened, description: "What you did, what you expected, and what happened instead." }
+    validations: { required: true }
+  - type: textarea
+    id: steps
+    attributes: { label: Steps to reproduce }
+  - type: input
+    id: version
+    attributes: { label: Version or commit, placeholder: "v0.1.0 or sha-1234567" }
+  - type: dropdown
+    id: deploy
+    attributes:
+      label: How you run it
+      options: [Docker Compose, Kubernetes, Binaries, Other]
+  - type: input
+    id: models
+    attributes: { label: LLM provider and model, placeholder: "e.g. Ollama qwen3:14b, Anthropic claude-sonnet-5-5" }
+  - type: textarea
+    id: logs
+    attributes: { label: Relevant logs, description: "api/worker logs around the problem. Redact anything sensitive.", render: text }

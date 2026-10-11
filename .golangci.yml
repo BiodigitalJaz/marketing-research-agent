@@ -1,0 +1,46 @@
+version: "2"
+run:
+  timeout: 5m
+linters:
+  default: standard   # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - misspell
+    - noctx
+    - revive
+    - sqlclosecheck
+    - unconvert
+    - depguard
+  settings:
+    depguard:
+      rules:
+        vendor-llm-sdks:
+          # Only the adapters may import vendor LLM SDKs (CLAUDE.md).
+          files:
+            - "$all"
+            - "!**/internal/llm/anthropic/**"
+            - "!**/internal/llm/openaicompat/**"
+          deny:
+            - pkg: github.com/anthropics/anthropic-sdk-go
+              desc: use internal/llm types; only internal/llm/anthropic may import the SDK
+            - pkg: github.com/openai/openai-go
+              desc: use internal/llm types; only internal/llm/openaicompat may import the SDK
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+    gosec:
+      excludes:
+        - G104 # covered by errcheck
+  exclusions:
+    generated: strict
+    rules:
+      - path: _test\.go
+        linters: [gosec, noctx]
+formatters:
+  enable: [gofmt, goimports]
+  settings:
+    goimports:
+      local-prefixes: [github.com/BiodigitalJaz/marketing-research-agent]

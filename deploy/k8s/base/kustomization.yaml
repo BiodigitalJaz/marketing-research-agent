@@ -1,0 +1,36 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: research-agent
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: research-agent
+    includeSelectors: false
+resources:
+  - namespace.yaml
+  - api.yaml
+  - worker.yaml
+  - web.yaml
+  - searxng.yaml
+configMapGenerator:
+  - name: research-agent-config
+    files:
+      - config.yaml
+  - name: searxng-settings
+    files:
+      - settings.yml=searxng-settings.yml
+# Secrets `research-agent-env` and `searxng-secret` are created out of band
+# (see docs/deployment.md) and are never committed. Overlays set the image
+# registry and tags, the web Service type or an Ingress, and config.
+images:
+  - name: research-agent-api
+    newName: ghcr.io/biodigitaljaz/marketing-research-agent-api
+    newTag: main
+  - name: research-agent-worker
+    newName: ghcr.io/biodigitaljaz/marketing-research-agent-worker
+    newTag: main
+  - name: research-agent-migrate
+    newName: ghcr.io/biodigitaljaz/marketing-research-agent-migrate
+    newTag: main
+  - name: research-agent-web
+    newName: ghcr.io/biodigitaljaz/marketing-research-agent-web
+    newTag: main

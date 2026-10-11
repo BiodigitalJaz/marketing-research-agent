@@ -1,0 +1,58 @@
+# Self-hosted SearXNG: the zero-cost search backend, reachable only inside
+# the namespace (ClusterIP). Engine policy lives in searxng-settings.yml.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: searxng
+  labels: { app.kubernetes.io/name: searxng }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: searxng }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: searxng }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: searxng
+          image: searxng/searxng@sha256:76b0bf285aca014c7191fc4d9234c4bfb358624ac33d8883833d496c059ec072
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom: [{ secretRef: { name: searxng-secret } }]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: settings, mountPath: /etc/searxng/settings.yml, subPath: settings.yml, readOnly: true }
+            - { name: cache, mountPath: /var/cache/searxng }
+            - { name: tmp, mountPath: /tmp }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 100m, memory: 192Mi }
+            limits: { memory: 512Mi }
+      volumes:
+        - name: settings
+          configMap: { name: searxng-settings }
+        - name: cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: searxng
+  labels: { app.kubernetes.io/name: searxng }
+spec:
+  selector: { app.kubernetes.io/name: searxng }
+  ports: [{ name: http, port: 8080, targetPort: http }]

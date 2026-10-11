@@ -1,0 +1,106 @@
+# Local development stack. `make dev` brings everything up.
+# Set secrets in .env (see .env.example). The stack boots without any.
+x-backend-env: &backend-env
+  RESEARCH_AGENT_DATABASE_URL: postgres://research:research@postgres:5432/research_agent?sslmode=disable
+  RESEARCH_AGENT_LOG_FORMAT: ${RESEARCH_AGENT_LOG_FORMAT:-text}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+  RESEARCH_AGENT_SECRETS_KEY: ${RESEARCH_AGENT_SECRETS_KEY:-}
+  LOCAL_LLM_BASE_URL: ${LOCAL_LLM_BASE_URL:-http://ollama:11434/v1}
+  RESEARCH_AGENT_SETUP_TOKEN: ${RESEARCH_AGENT_SETUP_TOKEN:-}
+  RESEARCH_AGENT_SERVER_BASE_URL: ${RESEARCH_AGENT_SERVER_BASE_URL:-http://localhost:3000}
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: research
+      POSTGRES_PASSWORD: research
+      POSTGRES_DB: research_agent
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U research -d research_agent"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    build: { context: ., target: migrate }
+    environment: *backend-env
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  # One-off: `docker compose run --rm seed` (reads RESEARCH_AGENT_ADMIN_* from .env).
+  seed:
+    build: { context: ., target: migrate }
+    entrypoint: ["/usr/local/bin/seed"]
+    environment:
+      <<: *backend-env
+      RESEARCH_AGENT_ADMIN_EMAIL: ${RESEARCH_AGENT_ADMIN_EMAIL:-}
+      RESEARCH_AGENT_ADMIN_PASSWORD: ${RESEARCH_AGENT_ADMIN_PASSWORD:-}
+      RESEARCH_AGENT_ADMIN_NAME: ${RESEARCH_AGENT_ADMIN_NAME:-}
+    profiles: [tools]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  api:
+    build: { context: ., target: api }
+    environment: *backend-env
+    # Lets LOCAL_LLM_BASE_URL point at a model server on the host
+    # (http://host.docker.internal:<port>/v1); Docker Desktop has this built in.
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    ports: ["8080:8080"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    restart: unless-stopped
+
+  worker:
+    build: { context: ., target: worker }
+    environment: *backend-env
+    # Lets LOCAL_LLM_BASE_URL point at a model server on the host
+    # (http://host.docker.internal:<port>/v1); Docker Desktop has this built in.
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    restart: unless-stopped
+    stop_grace_period: 40s   # > worker.shutdown_timeout so River can drain
+
+  web:
+    build:
+      context: ./web
+      args: { API_URL: "http://api:8080" }   # rewrites are fixed at build time
+    ports: ["3000:3000"]
+    depends_on: [api]
+    restart: unless-stopped
+
+  # Self-hosted metasearch (zero-cost search backend). Engine policy in
+  # deploy/k8s/base/searxng-settings.yml: only engines whose terms allow
+  # automated queries.
+  searxng:
+    image: searxng/searxng@sha256:76b0bf285aca014c7191fc4d9234c4bfb358624ac33d8883833d496c059ec072
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/var/cache/searxng:uid=10001", "/tmp:uid=10001"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:-dev-insecure-searxng-secret-change-me}
+    volumes:
+      - ./deploy/k8s/base/searxng-settings.yml:/etc/searxng/settings.yml:ro
+    ports: ["8888:8080"]
+    restart: unless-stopped
+
+  # Local models: `docker compose --profile ollama up`, then
+  # `docker compose exec ollama ollama pull qwen2.5:14b`.
+  ollama:
+    image: ollama/ollama:latest
+    profiles: [ollama]
+    ports: ["11434:11434"]
+    volumes: [ollama:/root/.ollama]
+
+volumes:
+  pgdata:
+  ollama:

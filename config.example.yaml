@@ -1,0 +1,56 @@
+# Copy to config.yaml and adjust. ${VAR} and ${VAR:-default} references
+# expand from the environment; any scalar key can also be overridden with
+# RESEARCH_AGENT_<SECTION>_<KEY>, using a double underscore for deeper nesting
+# (e.g. RESEARCH_AGENT_DATABASE_URL, RESEARCH_AGENT_SEARCH_BRAVE__API_KEY_ENV).
+# See docs/configuration.md for every key.
+server:
+  addr: ":8080"
+  base_url: "http://localhost:3000"
+  shutdown_timeout: 15s
+database:
+  url: "postgres://research:research@localhost:5432/research_agent?sslmode=disable"
+worker:
+  max_workers: 10
+  pipeline_workers: 2   # LLM-bound scoring jobs; keep low for a single local GPU
+  shutdown_timeout: 30s
+log:
+  level: info
+  format: json        # json | text
+mode:
+  offline: false      # local-only LLM mode: no hosted LLM providers; internet still used
+# Providers, routes, and prompts seed the DB on first boot; after that the
+# Settings UI is the source of truth. Keys are referenced by env var NAME.
+# Hosted and local providers are peers with the same capabilities.
+providers:
+  - id: claude
+    kind: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+  - id: openai
+    kind: openai_compat
+    base_url: "https://api.openai.com/v1"
+    api_key_env: OPENAI_API_KEY
+  - id: local
+    kind: openai_compat
+    base_url: "${LOCAL_LLM_BASE_URL:-http://localhost:11434/v1}"   # any OpenAI-compatible server
+    local: true
+# Task -> provider/model with an optional fallback (any provider).
+# Model IDs are examples; choose the models you want to run.
+routes:
+  classify: { provider: claude, model: claude-haiku-4-5-20251001, fallback: { provider: local, model: "qwen3:14b" } }
+  score:    { provider: claude, model: claude-haiku-4-5-20251001, fallback: { provider: local, model: "qwen3:14b" } }
+  draft:    { provider: claude, model: claude-sonnet-5-5,          fallback: { provider: local, model: "qwen3:32b" } }
+  research: { provider: claude, model: claude-sonnet-5-5,          fallback: { provider: local, model: "qwen3:32b" } }
+  summarize: { provider: claude, model: claude-haiku-4-5-20251001, fallback: { provider: local, model: "qwen3:14b" } }
+embeddings:
+  provider: local
+  model: nomic-embed-text
+  dimensions: 768
+search:
+  backend: searxng                      # zero-cost default; google_pse or brave are optional
+  searxng_url: "${SEARXNG_URL:-http://searxng:8080}"
+  brave:
+    api_key_env: BRAVE_API_KEY          # only used when backend is brave
+retention:
+  raw_items_days: 90
+inbox:
+  timezone: "UTC"   # IANA name, e.g. America/New_York; the daily inbox is built from 06:00 local time

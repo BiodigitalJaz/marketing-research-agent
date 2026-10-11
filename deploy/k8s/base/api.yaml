@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels: { app.kubernetes.io/name: api }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: api }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: api }
+    spec:
+      securityContext: &podsec
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      # Migrations run before every api start; goose holds an advisory lock,
+      # so concurrent replicas are safe and an up-to-date DB is a no-op.
+      initContainers:
+        - name: migrate
+          image: research-agent-migrate
+          envFrom: [{ secretRef: { name: research-agent-env } }]
+          env: &cfgenv
+            - { name: RESEARCH_AGENT_CONFIG, value: /etc/marketing-research-agent/config.yaml }
+          volumeMounts: &cfgmount
+            - { name: config, mountPath: /etc/marketing-research-agent, readOnly: true }
+          securityContext: &csec
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 128Mi }
+      containers:
+        - name: api
+          image: research-agent-api
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom: [{ secretRef: { name: research-agent-env } }]
+          env: *cfgenv
+          volumeMounts: *cfgmount
+          securityContext: *csec
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 256Mi }
+      volumes: &cfgvol
+        - name: config
+          configMap: { name: research-agent-config }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api   # web's /api rewrite targets http://api:8080
+  labels: { app.kubernetes.io/name: api }
+spec:
+  selector: { app.kubernetes.io/name: api }
+  ports: [{ name: http, port: 8080, targetPort: http }]
