@@ -3,7 +3,7 @@ module github.com/BiodigitalJaz/marketing-research-agent
 go 1.26.0
 
 require (
-	github.com/anthropics/anthropic-sdk-go v1.78.0
+	github.com/anthropics/anthropic-sdk-go v1.79.1
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-shiori/go-readability v0.0.0-20251205110129-5db1dc9836f0
 	github.com/google/uuid v1.6.0
@@ -14,7 +14,7 @@ require (
 	github.com/knadh/koanf/v2 v2.3.8
 	github.com/mmcdole/gofeed v1.5.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
-	github.com/openai/openai-go/v3 v3.73.0
+	github.com/openai/openai-go/v3 v3.74.0
 	github.com/pgvector/pgvector-go v0.4.1
 	github.com/pressly/goose/v3 v3.28.0
 	github.com/riverqueue/river v0.49.0
@@ -26,7 +26,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/crypto v0.57.0
-	golang.org/x/net v0.59.0
+	golang.org/x/net v0.60.0
 	golang.org/x/sync v0.24.0
 	golang.org/x/time v0.16.0
 )
