@@ -1,0 +1,1884 @@
+openapi: 3.1.0
+info:
+  title: Marketing Research Agent API
+  version: 0.8.0
+  description: |
+    Hand-written for the MVP; the web client is generated from this file
+    (`make api-client`). Keep it in sync with internal/httpapi handlers.
+
+    Auth: cookie session from POST /auth/login. Every state-changing request
+    except login must send the `X-CSRF-Token` header (value from the login or
+    /auth/me response). Workspace-scoped routes use `X-Workspace-ID`
+    (defaults to the user's first workspace). Errors use the Error schema.
+servers:
+  - url: /api/v1
+security:
+  - session: []
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Liveness
+      security: []
+      responses:
+        "200": { description: Process is up, content: { application/json: { schema: { $ref: "#/components/schemas/Status" } } } }
+  /ready:
+    get:
+      operationId: getReady
+      summary: Readiness (database reachable)
+      security: []
+      responses:
+        "200": { description: Ready to serve, content: { application/json: { schema: { $ref: "#/components/schemas/Status" } } } }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /auth/login:
+    post:
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200": { description: Signed in; sets session and CSRF cookies, content: { application/json: { schema: { $ref: "#/components/schemas/Session" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /auth/logout:
+    post:
+      operationId: logout
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "204": { description: Signed out }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /auth/me:
+    get:
+      operationId: me
+      responses:
+        "200": { description: Current session, content: { application/json: { schema: { $ref: "#/components/schemas/Session" } } } }
+        "401": { $ref: "#/components/responses/Error" }
+  /auth/password:
+    post:
+      operationId: changePassword
+      description: Changes the signed-in user's password and signs them out of every other session.
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string }
+                new_password: { type: string, minLength: 12 }
+      responses:
+        "204": { description: Changed }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /settings/users:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: listMembers
+      responses:
+        "200": { description: Workspace members, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/Member" } } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: addMember
+      description: >-
+        Adds a person to the workspace. A new email creates the account with the given temporary password (the app sends no email;
+        share it yourself). Someone who already has an account in another workspace keeps their own password (kept_password).
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, role]
+              properties:
+                email: { type: string }
+                name: { type: string }
+                role: { $ref: "#/components/schemas/Role" }
+                password: { type: string, description: Temporary password (at least 12 characters) for a new account }
+      responses:
+        "201":
+          description: Added
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [member, kept_password]
+                properties:
+                  member: { $ref: "#/components/schemas/Member" }
+                  kept_password: { type: boolean }
+        default: { $ref: "#/components/responses/Error" }
+  /settings/users/{id}:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    put:
+      operationId: updateMember
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { $ref: "#/components/schemas/Role" }
+                name: { type: string }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Member" } } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: removeMember
+      description: Removes the person from this workspace (their account stays for attribution). Refused for the last admin.
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "204": { description: Removed }
+        default: { $ref: "#/components/responses/Error" }
+  /settings/users/{id}/password:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    post:
+      operationId: resetMemberPassword
+      description: Sets a temporary password and signs the person out. Refused for people who also belong to other workspaces.
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [password], properties: { password: { type: string, minLength: 12 } } } } }
+      responses:
+        "204": { description: Reset }
+        default: { $ref: "#/components/responses/Error" }
+  /settings/workspace/name:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    put:
+      operationId: renameWorkspace
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string } } } } }
+      responses:
+        "200": { description: Renamed, content: { application/json: { schema: { type: object, required: [id, name], properties: { id: { type: string, format: uuid }, name: { type: string } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /setup/status:
+    get:
+      operationId: setupStatus
+      security: []
+      description: Whether this install still needs first-run setup (no users exist yet).
+      responses:
+        "200": { description: Setup status, content: { application/json: { schema: { $ref: "#/components/schemas/SetupStatus" } } } }
+  /setup:
+    post:
+      operationId: setup
+      security: []
+      description: >-
+        Claims a fresh install: creates the admin user, the workspace, and its defaults, then signs the admin in.
+        Works only while no user exists, with the one-time setup token from the api log.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, email, password, workspace]
+              properties:
+                token: { type: string }
+                email: { type: string }
+                name: { type: string }
+                password: { type: string, minLength: 12 }
+                workspace: { type: string, description: Workspace (brand) name }
+                example_brand: { type: string, description: Import this embedded example brand pack }
+      responses:
+        "200": { description: Set up and signed in; sets session and CSRF cookies, content: { application/json: { schema: { $ref: "#/components/schemas/Session" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /setup/checklist:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: setupChecklist
+      description: The "Getting started" steps and whether each is done.
+      responses:
+        "200": { description: Checklist, content: { application/json: { schema: { $ref: "#/components/schemas/SetupChecklist" } } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /brand/profile:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: getBrandProfile
+      responses:
+        "200": { description: Brand profile, content: { application/json: { schema: { $ref: "#/components/schemas/BrandProfileResponse" } } } }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      operationId: putBrandProfile
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BrandProfile" } } } }
+      responses:
+        "200": { description: Saved, content: { application/json: { schema: { $ref: "#/components/schemas/BrandProfileResponse" } } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /brand/import:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    post:
+      operationId: importBrandPack
+      description: >-
+        Applies a brand pack (YAML or JSON text). merge fills empty profile fields and adds keywords, competitors, ICPs, and
+        portfolio items that aren't there yet; replace swaps the whole brand for the pack's. dry_run reports the changes without writing.
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pack]
+              properties:
+                pack: { type: string, description: The brand pack as YAML or JSON }
+                mode: { type: string, enum: [merge, replace], default: merge }
+                dry_run: { type: boolean }
+                rename_workspace: { type: boolean, description: "Also rename the workspace to the pack's name (admins); prompts use it as the brand name" }
+      responses:
+        "200":
+          description: Applied (or previewed)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [name, dry_run, renamed, summary]
+                properties:
+                  name: { type: string }
+                  dry_run: { type: boolean }
+                  renamed: { type: boolean }
+                  summary:
+                    type: object
+                    required: [mode, profile_fields, keywords, competitors, icps, portfolio]
+                    properties:
+                      mode: { type: string }
+                      profile_fields: { type: integer }
+                      keywords: { type: integer }
+                      competitors: { type: integer }
+                      icps: { type: integer }
+                      portfolio: { type: integer }
+        default: { $ref: "#/components/responses/Error" }
+  /brand/export:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: exportBrandPack
+      description: The workspace's brand as a YAML brand pack (download).
+      responses:
+        "200": { description: Brand pack, content: { application/yaml: { schema: { type: string } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /portfolio:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: listPortfolio
+      responses:
+        "200": { description: Items, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/PortfolioItem" } } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createPortfolioItem
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PortfolioInput" } } } }
+      responses:
+        "201": { description: Created; embedding is computed in the background, content: { application/json: { schema: { $ref: "#/components/schemas/PortfolioItem" } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /portfolio/{id}:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    get:
+      operationId: getPortfolioItem
+      responses:
+        "200": { description: Item, content: { application/json: { schema: { $ref: "#/components/schemas/PortfolioItem" } } } }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      operationId: updatePortfolioItem
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PortfolioInput" } } } }
+      responses:
+        "200": { description: Updated; re-embedded in the background, content: { application/json: { schema: { $ref: "#/components/schemas/PortfolioItem" } } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deletePortfolioItem
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Error" }
+
+  /icps:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: listICPs
+      responses:
+        "200": { description: ICPs, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/ICP" } } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createICP
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ICPInput" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ICP" } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /icps/{id}:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    put:
+      operationId: updateICP
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ICPInput" } } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/ICP" } } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteICP
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Error" }
+
+  /keywords:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: listKeywords
+      responses:
+        "200": { description: Keywords, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/Keyword" } } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createKeyword
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/KeywordInput" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Keyword" } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /keywords/{id}:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    put:
+      operationId: updateKeyword
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/KeywordInput" } } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Keyword" } } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteKeyword
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Error" }
+
+  /competitors:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: listCompetitors
+      responses:
+        "200": { description: Competitors, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/Competitor" } } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createCompetitor
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CompetitorInput" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Competitor" } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /competitors/{id}:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    put:
+      operationId: updateCompetitor
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CompetitorInput" } } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Competitor" } } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteCompetitor
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Error" }
+
+  /sources:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: listSources
+      responses:
+        "200": { description: Sources with health, content: { application/json: { schema: { type: object, required: [items, connectors], properties: { items: { type: array, items: { $ref: "#/components/schemas/Source" } }, connectors: { $ref: "#/components/schemas/StringList" } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createSource
+      summary: Add a source (admin)
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/SourceInput" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Source" } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /sources/{id}:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    put:
+      operationId: updateSource
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/SourceInput" } } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Source" } } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteSource
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Error" }
+  /sources/{id}/test:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    post:
+      operationId: testSource
+      summary: Fetch once and return sample items; nothing is saved
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "200": { description: Sample, content: { application/json: { schema: { type: object, required: [ok, items], properties: { ok: { type: boolean }, error: { type: string }, items: { type: array, items: { $ref: "#/components/schemas/ItemPreview" } } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /monitors:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: listMonitors
+      responses:
+        "200": { description: Monitors, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/Monitor" } } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createMonitor
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MonitorInput" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Monitor" } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /monitors/{id}:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    put:
+      operationId: updateMonitor
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MonitorInput" } } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Monitor" } } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteMonitor
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Error" }
+  /monitors/{id}/run:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    post:
+      operationId: runMonitor
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "202": { description: Collection enqueued, content: { application/json: { schema: { type: object, properties: { job_id: { type: integer } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /monitors/{id}/progress:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    get:
+      operationId: monitorProgress
+      description: The current or latest run. Phases in order are queued, collecting (sources_done of sources_total), scoring (processed of collected), and done; idle before the first run.
+      responses:
+        "200": { description: Progress, content: { application/json: { schema: { $ref: "#/components/schemas/MonitorProgress" } } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /items:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: listItems
+      summary: Recently collected items
+      parameters:
+        - { name: source_id, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: monitor_id, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: limit, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200": { description: Items, content: { application/json: { schema: { type: object, required: [items, total], properties: { items: { type: array, items: { $ref: "#/components/schemas/RawItem" } }, total: { type: integer } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /items/process:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    post:
+      operationId: processItems
+      summary: Enqueue scoring for unprocessed items (rescore=true also re-runs recent items that produced nothing)
+      parameters:
+        - { $ref: "#/components/parameters/CSRF" }
+        - { name: rescore, in: query, required: false, schema: { type: boolean } }
+      responses:
+        "202": { description: Enqueued, content: { application/json: { schema: { type: object, required: [enqueued], properties: { enqueued: { type: integer } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /opportunities:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: listOpportunities
+      parameters:
+        - { name: lane, in: query, required: false, schema: { $ref: "#/components/schemas/Lane" } }
+        - { name: status, in: query, required: false, schema: { type: string, enum: [new, saved, acted, dismissed, snoozed, expired, all] } }
+        - { name: type, in: query, required: false, schema: { type: string } }
+        - { name: min_score, in: query, required: false, schema: { type: number } }
+        - { name: featured, in: query, required: false, schema: { type: boolean } }
+        - { name: cursor, in: query, required: false, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: Featured first, then by score
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor, counts]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Opportunity" } }
+                  next_cursor: { type: [string, "null"] }
+                  counts: { type: object, additionalProperties: { type: object, required: [new, featured], properties: { new: { type: integer }, featured: { type: integer } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /opportunities/{id}:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    get:
+      operationId: getOpportunity
+      responses:
+        "200": { description: Detail, content: { application/json: { schema: { $ref: "#/components/schemas/OpportunityDetail" } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /opportunities/{id}/status:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    post:
+      operationId: setOpportunityStatus
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [new, saved, acted, dismissed, snoozed] }
+                reason: { type: string, enum: [off_topic, low_intent, wrong_fit, too_old, duplicate, bad_source, other], description: Required when dismissing }
+                note: { type: string }
+                snoozed_until: { type: string, format: date-time }
+      responses:
+        "204": { description: Updated }
+        default: { $ref: "#/components/responses/Error" }
+  /opportunities/{id}/events:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    post:
+      operationId: logOpportunityEvent
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event]
+              properties:
+                event: { type: string, enum: [viewed, opened_link, copied_draft, outcome] }
+                outcome: { type: string, enum: [no_response, reply, dm, meeting, lead, client] }
+                meta: { type: object, additionalProperties: true, description: "copied_draft requires meta.draft_id (a draft of this opportunity)" }
+      responses:
+        "204": { description: Logged }
+        default: { $ref: "#/components/responses/Error" }
+  /opportunities/{id}/drafts:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    post:
+      operationId: requestDrafts
+      description: Queues draft generation. Poll GET /opportunities/{id} (drafting.state) for the result. Drafts are suggestions; nothing is ever posted.
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kind: { type: string, enum: [reply, pitch, comment], description: Defaults to the lane's draft kind }
+                instruction: { type: string, maxLength: 1000, description: Regenerate with this instruction }
+      responses:
+        "202":
+          description: Queued (queued=false when an identical request is already pending)
+          content: { application/json: { schema: { type: object, required: [queued], properties: { queued: { type: boolean } } } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /research:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: listResearch
+      parameters: [{ name: archived, in: query, schema: { type: boolean }, description: List archived jobs instead of active ones }]
+      responses:
+        "200":
+          description: Recent jobs
+          content: { application/json: { schema: { type: object, required: [items, templates], properties: { items: { type: array, items: { $ref: "#/components/schemas/ResearchJob" } }, templates: { type: array, items: { type: string } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createResearch
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode, question]
+              properties:
+                mode: { type: string, enum: [chat, deep] }
+                question: { type: string, maxLength: 4000 }
+                template: { type: [string, "null"], enum: [freeform, competitor_teardown, market_scan, pain_points, topic_deep_dive, null] }
+                use_web: { type: boolean, description: "false = collected corpus and brand data only (default true)" }
+      responses:
+        "201": { description: Queued, content: { application/json: { schema: { $ref: "#/components/schemas/ResearchJob" } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /research/{id}:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    get:
+      operationId: getResearch
+      responses:
+        "200":
+          description: Job with its steps and chat messages
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [job, steps, messages]
+                properties:
+                  job: { $ref: "#/components/schemas/ResearchJob" }
+                  steps: { type: array, items: { $ref: "#/components/schemas/ResearchStep" } }
+                  messages: { type: array, items: { $ref: "#/components/schemas/ChatMessage" } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteResearch
+      description: Deletes a finished research job with its steps and chat. Reports it produced are kept. The author or an admin; running jobs must be cancelled first (409).
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Error" }
+  /research/{id}/stream:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      operationId: streamResearch
+      description: "Server-sent events: `step` events (id = seq, data = ResearchStep); the stream ends after the `done` step. Resume with Last-Event-ID or ?after=. EventSource clients pass ?workspace= instead of the header."
+      parameters:
+        - { name: workspace, in: query, schema: { type: string, format: uuid } }
+        - { name: after, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: Event stream, content: { text/event-stream: { schema: { type: string } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /research/{id}/messages:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    post:
+      operationId: researchFollowUp
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [content], properties: { content: { type: string, maxLength: 4000 } } } } } }
+      responses:
+        "202": { description: Queued, content: { application/json: { schema: { $ref: "#/components/schemas/ResearchJob" } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /research/{id}/cancel:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    post:
+      operationId: cancelResearch
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "200": { description: Cancelled, content: { application/json: { schema: { $ref: "#/components/schemas/ResearchJob" } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /research/{id}/archive:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    post:
+      operationId: archiveResearch
+      description: Hides a research job from the list (archived true) or restores it. Archived jobs stay readable.
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [archived], properties: { archived: { type: boolean } } } } } }
+      responses:
+        "204": { description: Updated }
+        default: { $ref: "#/components/responses/Error" }
+  /reports:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: listReports
+      responses:
+        "200":
+          description: Reports, newest first
+          content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/ReportSummary" } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /reports/{id}:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    get:
+      operationId: getReport
+      responses:
+        "200": { description: Report, content: { application/json: { schema: { $ref: "#/components/schemas/Report" } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /reports/{id}/export:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    get:
+      operationId: exportReport
+      parameters: [{ name: format, in: query, schema: { type: string, enum: [md] } }]
+      responses:
+        "200": { description: Markdown download with a sources list; charts become tables, content: { text/markdown: { schema: { type: string } } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /knowledge/memory-bank:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: getMemoryBank
+      description: The memory bank's core files (generated from the internal docs), in dependency order.
+      responses:
+        "200": { description: Files, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/MemoryBankFile" } } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /settings/knowledge:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: getKnowledge
+      responses:
+        "200":
+          description: Knowledge sources, counts, and memory bank status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sources, counts, memory_bank, core_files, default_exclude]
+                properties:
+                  sources: { type: array, items: { $ref: "#/components/schemas/KnowledgeSource" } }
+                  counts: { type: object, required: [docs, chunks, embedded, digested], properties: { docs: { type: integer }, chunks: { type: integer }, embedded: { type: integer }, digested: { type: integer } } }
+                  memory_bank: { type: array, items: { type: object, required: [name, updated_at, commit_sha, chars], properties: { name: { type: string }, updated_at: { type: string, format: date-time }, commit_sha: { type: [string, "null"] }, chars: { type: integer } } } }
+                  core_files: { type: array, items: { type: string } }
+                  default_exclude: { type: array, items: { type: string } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createKnowledgeSource
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/KnowledgeInput" } } } }
+      responses:
+        "201": { description: Created; a sync is queued, content: { application/json: { schema: { $ref: "#/components/schemas/KnowledgeSource" } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /settings/knowledge/{id}:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    put:
+      operationId: updateKnowledgeSource
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/KnowledgeInput" } } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/KnowledgeSource" } } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteKnowledgeSource
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "204": { description: Deleted with its docs }
+        default: { $ref: "#/components/responses/Error" }
+  /settings/knowledge/{id}/sync:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    post:
+      operationId: syncKnowledgeSource
+      description: Checks the branch for doc changes (there is no schedule). Refused with 409 busy while a sync or memory bank build is queued or running for the workspace.
+      parameters: [{ $ref: "#/components/parameters/CSRF" }, { name: force, in: query, schema: { type: boolean }, description: Also update the memory bank when nothing changed }]
+      responses:
+        "202": { description: Queued, content: { application/json: { schema: { type: object, required: [queued], properties: { queued: { type: boolean } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /settings/knowledge/{id}/docs:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    get:
+      operationId: listKnowledgeDocs
+      responses:
+        "200":
+          description: Synced docs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [path, title, chunks, digested, informs, updated_at, url]
+                      properties:
+                        path: { type: string }
+                        title: { type: string }
+                        chunks: { type: integer }
+                        digested: { type: boolean }
+                        informs: { type: array, items: { type: string } }
+                        updated_at: { type: string, format: date-time }
+                        url: { type: string }
+        default: { $ref: "#/components/responses/Error" }
+  /settings/knowledge/rebuild:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    post:
+      operationId: rebuildMemoryBank
+      description: Refused with 409 busy while a sync or build is queued or running.
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "202": { description: Queued, content: { application/json: { schema: { type: object, required: [queued], properties: { queued: { type: boolean } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /settings/lanes:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: listLanes
+      responses:
+        "200": { description: Lane configs, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/LaneConfig" } } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /settings/lanes/{lane}:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { name: lane, in: path, required: true, schema: { $ref: "#/components/schemas/Lane" } }]
+    put:
+      operationId: saveLane
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/LaneConfig" } } } }
+      responses:
+        "204": { description: Saved }
+        default: { $ref: "#/components/responses/Error" }
+
+  /settings/secrets:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: listSecrets
+      summary: Secret metadata (values are write-only and never returned)
+      responses:
+        "200": { description: Secrets, content: { application/json: { schema: { type: object, required: [items, encryption_enabled], properties: { items: { type: array, items: { $ref: "#/components/schemas/Secret" } }, encryption_enabled: { type: boolean } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createSecret
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/SecretInput" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { type: object, required: [id], properties: { id: { type: string, format: uuid } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /settings/secrets/{id}:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    put:
+      operationId: updateSecret
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/SecretInput" } } } }
+      responses:
+        "204": { description: Updated }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteSecret
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Error" }
+
+  /settings/providers:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: listProviders
+      responses:
+        "200": { description: Providers, content: { application/json: { schema: { type: object, required: [items, encryption_enabled], properties: { items: { type: array, items: { $ref: "#/components/schemas/Provider" } }, encryption_enabled: { type: boolean } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createProvider
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ProviderInput" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Provider" } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /settings/providers/{id}:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { name: id, in: path, required: true, schema: { type: string } }]
+    put:
+      operationId: updateProvider
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ProviderInput" } } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Provider" } } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteProvider
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Error" }
+  /settings/providers/{id}/test:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { name: id, in: path, required: true, schema: { type: string } }]
+    post:
+      operationId: testProvider
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "200": { description: Test result, content: { application/json: { schema: { type: object, required: [ok, latency_ms, models], properties: { ok: { type: boolean }, latency_ms: { type: integer }, models: { type: integer }, error: { type: string } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /settings/providers/{id}/discover:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { name: id, in: path, required: true, schema: { type: string } }]
+    get:
+      operationId: discoverModels
+      responses:
+        "200": { description: Models offered by the endpoint, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/DiscoveredModel" } } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /settings/embeddings/probe:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    post:
+      operationId: probeEmbeddings
+      description: Embeds a short text with the model and returns the vector length, to fill in the dimensions.
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [provider_id, model], properties: { provider_id: { type: string }, model: { type: string } } } } }
+      responses:
+        "200": { description: Dimensions, content: { application/json: { schema: { type: object, required: [dimensions], properties: { dimensions: { type: integer } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /settings/models:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: listModels
+      responses:
+        "200": { description: Declared models, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/Model" } } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: saveModel
+      summary: Create or update a declared model
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/Model" } } } }
+      responses:
+        "200": { description: Saved, content: { application/json: { schema: { $ref: "#/components/schemas/Model" } } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteModel
+      parameters:
+        - { $ref: "#/components/parameters/CSRF" }
+        - { name: provider_id, in: query, required: true, schema: { type: string } }
+        - { name: model, in: query, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Error" }
+
+  /settings/routes:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: listRoutes
+      responses:
+        "200": { description: Routes per task with live status, content: { application/json: { schema: { type: object, required: [items, builtin_tools], properties: { items: { type: array, items: { $ref: "#/components/schemas/Route" } }, builtin_tools: { type: array, items: { type: string }, description: "Built-in research tools; a route's tools allowlist (empty = all)" } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /settings/routes/{task}:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { name: task, in: path, required: true, schema: { type: string } }]
+    put:
+      operationId: saveRoute
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/RouteInput" } } } }
+      responses:
+        "200": { description: Saved, content: { application/json: { schema: { type: object, properties: { task: { type: string }, provider_id: { type: string }, model: { type: string } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /settings/prompts:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: listPrompts
+      parameters: [{ name: task, in: query, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Versions, newest first, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/Prompt" } } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createPrompt
+      summary: Save an edit as a new version
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task, body]
+              properties:
+                task: { type: string }
+                body: { type: string }
+                notes: { type: [string, "null"] }
+                activate: { type: boolean }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Prompt" } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /settings/prompts/{id}/activate:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    post:
+      operationId: activatePrompt
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "204": { description: Activated }
+        default: { $ref: "#/components/responses/Error" }
+
+  /settings/mcp-servers:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: listMCPServers
+      responses:
+        "200": { description: Servers, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/MCPServer" } } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createMCPServer
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MCPServerInput" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/MCPServer" } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /settings/mcp-servers/{id}:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    put:
+      operationId: updateMCPServer
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MCPServerInput" } } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/MCPServer" } } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteMCPServer
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Error" }
+  /settings/mcp-servers/{id}/test:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }, { $ref: "#/components/parameters/ID" }]
+    post:
+      operationId: testMCPServer
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      responses:
+        "200": { description: Tools offered and whether each may be allowlisted, content: { application/json: { schema: { type: object, required: [ok, tools], properties: { ok: { type: boolean }, error: { type: string }, tools: { type: array, items: { $ref: "#/components/schemas/MCPTool" } } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /settings/workspace:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: getWorkspaceSettings
+      responses:
+        "200": { description: Settings, content: { application/json: { schema: { $ref: "#/components/schemas/WorkspaceSettings" } } } }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      operationId: putWorkspaceSettings
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/WorkspaceSettingsInput" } } } }
+      responses:
+        "200": { description: Saved, content: { application/json: { schema: { $ref: "#/components/schemas/WorkspaceSettings" } } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /settings/runs:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    get:
+      operationId: listRuns
+      summary: The 100 most recent model calls
+      responses:
+        "200": { description: Runs, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/ModelRun" } } } } } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /settings/playground:
+    parameters: [{ $ref: "#/components/parameters/Workspace" }]
+    post:
+      operationId: playground
+      summary: Run a prompt (SSE events text, thinking, tool_call, tool_result, done, error)
+      parameters: [{ $ref: "#/components/parameters/CSRF" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PlaygroundInput" } } } }
+      responses:
+        "200": { description: Server-sent events, content: { text/event-stream: { schema: { type: string } } } }
+        default: { $ref: "#/components/responses/Error" }
+
+components:
+  securitySchemes:
+    session: { type: apiKey, in: cookie, name: session }
+  parameters:
+    CSRF: { name: X-CSRF-Token, in: header, required: false, schema: { type: string }, description: Required on state-changing requests; the client middleware sets it. }
+    Workspace: { name: X-Workspace-ID, in: header, required: false, schema: { type: string, format: uuid } }
+    ID: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+  responses:
+    Error:
+      description: Error
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+  schemas:
+    Status:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+    Lane: { type: string, enum: [inbound, media, thought_leadership] }
+    Role: { type: string, enum: [admin, editor, viewer] }
+    Member:
+      type: object
+      required: [id, email, name, role, created_at, you]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        name: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+        created_at: { type: string, format: date-time }
+        you: { type: boolean, description: The signed-in user }
+    MonitorProgress:
+      type: object
+      required: [phase, sources_done, sources_total, collected, processed, opportunities]
+      properties:
+        phase: { type: string, enum: [idle, queued, collecting, scoring, done] }
+        sources_done: { type: integer }
+        sources_total: { type: integer }
+        collected: { type: integer }
+        processed: { type: integer }
+        opportunities: { type: integer }
+        started_at: { type: string, format: date-time, nullable: true }
+        finished_at: { type: string, format: date-time, nullable: true }
+        next_run_at: { type: string, format: date-time, nullable: true }
+        last_error: { type: string, nullable: true }
+    SetupStatus:
+      type: object
+      required: [needs_setup, encryption_enabled, example_brands]
+      properties:
+        needs_setup: { type: boolean }
+        encryption_enabled: { type: boolean, description: Whether keys can be entered in Settings (the secrets master key is set) }
+        example_brands: { type: array, items: { type: string } }
+    SetupChecklist:
+      type: object
+      required: [items, done, total]
+      properties:
+        done: { type: integer }
+        total: { type: integer }
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, title, detail, done, href, admin]
+            properties:
+              id: { type: string }
+              title: { type: string }
+              detail: { type: string }
+              done: { type: boolean }
+              href: { type: string, description: App path where the step is done }
+              admin: { type: boolean, description: Only an admin can complete this step }
+    Session:
+      type: object
+      required: [user, workspaces, csrf_token]
+      properties:
+        user:
+          type: object
+          required: [id, email, name]
+          properties:
+            id: { type: string, format: uuid }
+            email: { type: string }
+            name: { type: string }
+        workspaces:
+          type: array
+          items:
+            type: object
+            required: [id, name, role]
+            properties:
+              id: { type: string, format: uuid }
+              name: { type: string }
+              role: { $ref: "#/components/schemas/Role" }
+        csrf_token: { type: string }
+    StringList: { type: array, items: { type: string } }
+    BrandProfile:
+      type: object
+      required: [services, value_props, differentiators, tone, targeting]
+      properties:
+        services: { $ref: "#/components/schemas/StringList" }
+        value_props: { $ref: "#/components/schemas/StringList" }
+        differentiators: { $ref: "#/components/schemas/StringList" }
+        tone:
+          type: object
+          required: [voice, do, dont, examples]
+          properties:
+            voice: { type: string }
+            do: { $ref: "#/components/schemas/StringList" }
+            dont: { $ref: "#/components/schemas/StringList" }
+            examples: { $ref: "#/components/schemas/StringList" }
+        targeting:
+          type: object
+          required: [prioritize, avoid, geography, excluded_venues, topics, media_targets]
+          properties:
+            prioritize: { $ref: "#/components/schemas/StringList" }
+            avoid: { $ref: "#/components/schemas/StringList" }
+            geography: { $ref: "#/components/schemas/StringList" }
+            excluded_venues: { $ref: "#/components/schemas/StringList" }
+            topics: { $ref: "#/components/schemas/StringList" }
+            media_targets: { $ref: "#/components/schemas/StringList" }
+    BrandProfileResponse:
+      type: object
+      required: [profile, updated_at]
+      properties:
+        profile: { $ref: "#/components/schemas/BrandProfile" }
+        updated_at: { type: [string, "null"], format: date-time }
+    PortfolioKind: { type: string, enum: [case_study, blog_post, work_sample, talk, other] }
+    PortfolioTags:
+      type: object
+      required: [industries, services, problems]
+      properties:
+        industries: { $ref: "#/components/schemas/StringList" }
+        services: { $ref: "#/components/schemas/StringList" }
+        problems: { $ref: "#/components/schemas/StringList" }
+    PortfolioInput:
+      type: object
+      required: [kind, title, summary, tags]
+      properties:
+        kind: { $ref: "#/components/schemas/PortfolioKind" }
+        title: { type: string, maxLength: 300 }
+        url: { type: [string, "null"] }
+        summary: { type: string, maxLength: 5000 }
+        tags: { $ref: "#/components/schemas/PortfolioTags" }
+    PortfolioItem:
+      allOf:
+        - $ref: "#/components/schemas/PortfolioInput"
+        - type: object
+          required: [id, created_at, embedded]
+          properties:
+            id: { type: string, format: uuid }
+            created_at: { type: string, format: date-time }
+            embedded: { type: boolean, description: True once an embedding exists for the active model. }
+    ICPDefinition:
+      type: object
+      required: [industries, company_sizes, roles, pain_points, buying_signals]
+      properties:
+        industries: { $ref: "#/components/schemas/StringList" }
+        company_sizes: { $ref: "#/components/schemas/StringList" }
+        roles: { $ref: "#/components/schemas/StringList" }
+        pain_points: { $ref: "#/components/schemas/StringList" }
+        buying_signals: { $ref: "#/components/schemas/StringList" }
+    ICPInput:
+      type: object
+      required: [name, definition]
+      properties:
+        name: { type: string, maxLength: 200 }
+        definition: { $ref: "#/components/schemas/ICPDefinition" }
+    ICP:
+      allOf:
+        - $ref: "#/components/schemas/ICPInput"
+        - type: object
+          required: [id, embedded]
+          properties:
+            id: { type: string, format: uuid }
+            embedded: { type: boolean }
+    KeywordInput:
+      type: object
+      required: [term, kind]
+      properties:
+        term: { type: string, maxLength: 200 }
+        kind: { type: string, enum: [track, negative] }
+        lane: { oneOf: [{ $ref: "#/components/schemas/Lane" }, { type: "null" }], description: null = all lanes }
+    Keyword:
+      allOf:
+        - $ref: "#/components/schemas/KeywordInput"
+        - type: object
+          required: [id, lane]
+          properties:
+            id: { type: string, format: uuid }
+    CompetitorInput:
+      type: object
+      required: [name, domains]
+      properties:
+        name: { type: string, maxLength: 200 }
+        domains: { $ref: "#/components/schemas/StringList" }
+        notes: { type: [string, "null"] }
+    Competitor:
+      allOf:
+        - $ref: "#/components/schemas/CompetitorInput"
+        - type: object
+          required: [id, notes]
+          properties:
+            id: { type: string, format: uuid }
+
+    Secret:
+      type: object
+      required: [id, name, scope, last4, updated_at, used_by_providers]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        scope: { type: string, enum: [instance, workspace] }
+        last4: { type: string }
+        updated_at: { type: string, format: date-time }
+        used_by_providers: { $ref: "#/components/schemas/StringList" }
+    SecretInput:
+      type: object
+      properties:
+        name: { type: string }
+        value: { type: string, description: Write-only }
+        scope: { type: string, enum: [instance, workspace] }
+    ProviderOptions:
+      type: object
+      properties:
+        reasoning_style: { type: string, enum: [reasoning_effort, chat_template] }
+        max_tokens_param: { type: string, enum: [max_tokens, max_completion_tokens] }
+        max_retries: { type: integer }
+        max_concurrency: { type: integer, description: Simultaneous calls per process; 0 = unlimited }
+    Provider:
+      type: object
+      required: [id, name, kind, base_url, is_local, enabled, api_key, headers, options]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        kind: { type: string, enum: [anthropic, openai_compat] }
+        base_url: { type: string }
+        is_local: { type: boolean }
+        enabled: { type: boolean }
+        api_key:
+          type: object
+          required: [source, secret_id, env_set]
+          properties:
+            source: { type: string, enum: [secret, env, none] }
+            secret_id: { type: [string, "null"], format: uuid }
+            secret_name: { type: string }
+            last4: { type: string }
+            env: { type: string }
+            env_set: { type: boolean }
+        headers: { type: object, additionalProperties: { type: string } }
+        options: { $ref: "#/components/schemas/ProviderOptions" }
+    ProviderInput:
+      type: object
+      required: [kind]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        kind: { type: string, enum: [anthropic, openai_compat] }
+        base_url: { type: string }
+        is_local: { type: boolean }
+        enabled: { type: boolean }
+        api_key: { type: string, description: Paste a key; stored encrypted. Write-only. }
+        api_key_secret_id: { type: [string, "null"], format: uuid }
+        api_key_env: { type: string }
+        clear_api_key: { type: boolean }
+        headers: { type: object, additionalProperties: { type: string } }
+        options: { $ref: "#/components/schemas/ProviderOptions" }
+    Capabilities:
+      type: object
+      required: [tools, vision, json_schema, sampling]
+      properties:
+        tools: { type: boolean }
+        vision: { type: boolean }
+        json_schema: { type: boolean }
+        thinking: { type: string, enum: ["", effort, budget] }
+        sampling: { type: boolean }
+        max_context: { type: integer }
+        max_output: { type: integer }
+    Thinking:
+      type: object
+      properties:
+        effort: { type: string, enum: [low, medium, high, xhigh, max] }
+        budget_tokens: { type: integer }
+        summarized: { type: boolean }
+    Params:
+      type: object
+      properties:
+        temperature: { type: number }
+        top_p: { type: number }
+        max_tokens: { type: integer }
+        thinking: { $ref: "#/components/schemas/Thinking" }
+        extra: { type: object, additionalProperties: true }
+        max_steps: { type: integer }
+        timeout_s: { type: integer }
+        token_budget: { type: integer }
+    Price:
+      type: object
+      properties:
+        input_per_mtok: { type: number }
+        output_per_mtok: { type: number }
+    Model:
+      type: object
+      required: [provider_id, model, display_name, capabilities, default_params, price, enabled]
+      properties:
+        provider_id: { type: string }
+        model: { type: string }
+        display_name: { type: string }
+        capabilities: { $ref: "#/components/schemas/Capabilities" }
+        default_params: { $ref: "#/components/schemas/Params" }
+        price: { $ref: "#/components/schemas/Price" }
+        enabled: { type: boolean }
+    DiscoveredModel:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string }
+        display_name: { type: string }
+        capabilities: { $ref: "#/components/schemas/Capabilities" }
+    RouteInput:
+      type: object
+      required: [provider_id, model]
+      properties:
+        provider_id: { type: string }
+        model: { type: string }
+        fallback_provider_id: { type: [string, "null"] }
+        fallback_model: { type: [string, "null"] }
+        params: { $ref: "#/components/schemas/Params" }
+        tools: { $ref: "#/components/schemas/StringList" }
+        mcp_server_ids: { type: array, items: { type: string, format: uuid } }
+    Route:
+      allOf:
+        - $ref: "#/components/schemas/RouteInput"
+        - type: object
+          required: [task, configured, usable, effective, problems, params, tools, mcp_server_ids, fallback_provider_id, fallback_model]
+          properties:
+            task: { type: string }
+            configured: { type: boolean }
+            usable: { type: boolean }
+            effective: { $ref: "#/components/schemas/StringList" }
+            problems: { $ref: "#/components/schemas/StringList" }
+    Prompt:
+      type: object
+      required: [id, task, version, body, notes, active, scope, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        task: { type: string }
+        version: { type: integer }
+        body: { type: string }
+        notes: { type: [string, "null"] }
+        active: { type: boolean }
+        scope: { type: string, enum: [default, workspace] }
+        created_at: { type: string, format: date-time }
+    MCPHeaderRef:
+      type: object
+      properties:
+        secret_id: { type: string, format: uuid }
+        env: { type: string }
+    MCPServer:
+      type: object
+      required: [id, name, transport, url, command, args, headers, allowed_tools, enabled]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        transport: { type: string, enum: [streamable_http, stdio] }
+        url: { type: [string, "null"] }
+        command: { type: [string, "null"] }
+        args: { $ref: "#/components/schemas/StringList" }
+        headers: { type: object, additionalProperties: { $ref: "#/components/schemas/MCPHeaderRef" } }
+        allowed_tools: { $ref: "#/components/schemas/StringList" }
+        enabled: { type: boolean }
+    MCPServerInput:
+      type: object
+      required: [name, transport]
+      properties:
+        name: { type: string }
+        transport: { type: string, enum: [streamable_http, stdio] }
+        url: { type: string }
+        command: { type: string }
+        args: { $ref: "#/components/schemas/StringList" }
+        headers:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              secret_id: { type: string, format: uuid }
+              env: { type: string }
+              value: { type: string, description: Write-only; stored encrypted }
+        allowed_tools: { $ref: "#/components/schemas/StringList" }
+        enabled: { type: boolean }
+    MCPTool:
+      type: object
+      required: [name, description, read_only, destructive, allowable]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        input_schema: { type: object, additionalProperties: true }
+        read_only: { type: boolean }
+        destructive: { type: boolean }
+        allowable: { type: boolean }
+    EmbeddingSettings:
+      type: object
+      properties:
+        provider_id: { type: string }
+        model: { type: string }
+        dimensions: { type: integer }
+    SearchSettings:
+      type: object
+      properties:
+        backend: { type: string, enum: ["", searxng, google_pse, brave] }
+        searxng_url: { type: string }
+        searxng_categories: { type: string }
+        google_pse_cx: { type: string }
+        google_pse_key_secret_id: { type: string, format: uuid }
+        google_pse_key_env: { type: string }
+        api_key_secret_id: { type: string, format: uuid, description: Brave key secret }
+        api_key_env: { type: string, description: Brave key env var }
+        country: { type: string }
+        search_lang: { type: string }
+        safesearch: { type: string, enum: ["off", moderate, strict] }
+        monthly_budget: { type: integer, description: Paid backends only; 0 = no limit }
+    WorkspaceSettings:
+      type: object
+      required: [local_only, embeddings, search, search_key_set, encryption_enabled, updated_at]
+      properties:
+        local_only: { type: boolean }
+        embeddings: { $ref: "#/components/schemas/EmbeddingSettings" }
+        search: { $ref: "#/components/schemas/SearchSettings" }
+        search_key_set: { type: boolean }
+        encryption_enabled: { type: boolean }
+        updated_at: { type: [string, "null"], format: date-time }
+    WorkspaceSettingsInput:
+      type: object
+      required: [local_only, embeddings, search]
+      properties:
+        local_only: { type: boolean }
+        embeddings: { $ref: "#/components/schemas/EmbeddingSettings" }
+        search: { $ref: "#/components/schemas/SearchSettings" }
+        search_api_key: { type: string, description: Brave key; write-only; stored encrypted }
+        google_pse_api_key: { type: string, description: Google PSE key; write-only; stored encrypted }
+    ModelRun:
+      type: object
+      required: [id, task, provider_id, model, input_tokens, output_tokens, cost_usd, latency_ms, error, fallback, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        task: { type: string }
+        provider_id: { type: string }
+        model: { type: string }
+        input_tokens: { type: [integer, "null"] }
+        output_tokens: { type: [integer, "null"] }
+        cost_usd: { type: [number, "null"] }
+        latency_ms: { type: [integer, "null"] }
+        error: { type: [string, "null"] }
+        fallback: { type: boolean }
+        created_at: { type: string, format: date-time }
+    PlaygroundInput:
+      type: object
+      required: [messages]
+      properties:
+        task: { type: string, description: Route mode; otherwise set provider_id and model }
+        provider_id: { type: string }
+        model: { type: string }
+        system: { type: string }
+        prompt_id: { type: [string, "null"], format: uuid }
+        messages:
+          type: array
+          items:
+            type: object
+            required: [role, text]
+            properties:
+              role: { type: string, enum: [user, assistant] }
+              text: { type: string }
+              images: { type: array, items: { type: object, required: [media_type, data], properties: { media_type: { type: string }, data: { type: string } } } }
+        params: { $ref: "#/components/schemas/Params" }
+        json_schema: { type: [object, "null"], additionalProperties: true }
+        mcp_server_ids: { type: array, items: { type: string, format: uuid } }
+        max_steps: { type: integer }
+
+    Source:
+      type: object
+      required: [id, connector, name, config, enabled, health, last_error, last_run_at, item_count]
+      properties:
+        id: { type: string, format: uuid }
+        connector: { type: string, enum: [rss, hn, search] }
+        name: { type: string }
+        config: { type: object, additionalProperties: true }
+        enabled: { type: boolean }
+        health: { type: string, enum: [ok, degraded, failing, unknown] }
+        last_error: { type: [string, "null"] }
+        last_run_at: { type: [string, "null"], format: date-time }
+        item_count: { type: integer }
+    SourceInput:
+      type: object
+      required: [name]
+      properties:
+        connector: { type: string, enum: [rss, hn, search], description: Fixed after creation }
+        name: { type: string }
+        config: { type: object, additionalProperties: true }
+        enabled: { type: boolean }
+    ItemPreview:
+      type: object
+      required: [external_id, url, title, snippet, community, published_at]
+      properties:
+        external_id: { type: string }
+        url: { type: string }
+        title: { type: string }
+        snippet: { type: string }
+        community: { type: string }
+        published_at: { type: [string, "null"], format: date-time }
+        metrics: { type: object, additionalProperties: true }
+    Monitor:
+      type: object
+      required: [id, name, source_ids, query, lanes, schedule_cron, enabled, last_run_at, next_run_at, last_error, last_new_items]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        source_ids: { type: array, items: { type: string, format: uuid } }
+        query: { type: string }
+        lanes: { type: array, items: { $ref: "#/components/schemas/Lane" } }
+        schedule_cron: { type: string }
+        enabled: { type: boolean }
+        last_run_at: { type: [string, "null"], format: date-time }
+        next_run_at: { type: [string, "null"], format: date-time }
+        last_error: { type: [string, "null"] }
+        last_new_items: { type: integer }
+    MonitorInput:
+      type: object
+      required: [name, source_ids]
+      properties:
+        name: { type: string }
+        source_ids: { type: array, items: { type: string, format: uuid } }
+        query: { type: string, description: 'Terms AND, "phrases", OR alternatives, -exclusions; empty = tracked keywords' }
+        lanes: { type: array, items: { $ref: "#/components/schemas/Lane" } }
+        schedule_cron: { type: string, description: 5-field cron or @hourly/@daily }
+        enabled: { type: boolean }
+    RawItem:
+      type: object
+      required: [id, source_id, source_name, connector, monitor_id, url, title, snippet, community, author_handle, published_at, fetched_at, metrics]
+      properties:
+        id: { type: string, format: uuid }
+        source_id: { type: string, format: uuid }
+        source_name: { type: string }
+        connector: { type: string }
+        monitor_id: { type: [string, "null"], format: uuid }
+        url: { type: string }
+        title: { type: [string, "null"] }
+        snippet: { type: string }
+        community: { type: [string, "null"] }
+        author_handle: { type: [string, "null"] }
+        published_at: { type: [string, "null"], format: date-time }
+        fetched_at: { type: string, format: date-time }
+        metrics: { type: object, additionalProperties: true }
+
+    ScoreBreakdown:
+      type: object
+      properties:
+        factors: { type: object, additionalProperties: { type: number } }
+        flags: { $ref: "#/components/schemas/StringList" }
+        llm_relevance: { type: number }
+        embedding_similarity: { type: [number, "null"] }
+    Opportunity:
+      type: object
+      required: [id, lane, opp_type, score, score_breakdown, explanation, deadline, status, snoozed_until, featured, created_at, raw_item_id, url, title, snippet, community, source_name, published_at, fetched_at]
+      properties:
+        id: { type: string, format: uuid }
+        lane: { $ref: "#/components/schemas/Lane" }
+        opp_type: { type: string }
+        score: { type: number }
+        score_breakdown: { $ref: "#/components/schemas/ScoreBreakdown" }
+        explanation: { type: string }
+        deadline: { type: [string, "null"], format: date-time }
+        status: { type: string, enum: [new, saved, acted, dismissed, snoozed, expired] }
+        snoozed_until: { type: [string, "null"], format: date-time }
+        featured: { type: boolean }
+        created_at: { type: string, format: date-time }
+        raw_item_id: { type: string, format: uuid }
+        url: { type: string }
+        title: { type: [string, "null"] }
+        snippet: { type: string }
+        community: { type: [string, "null"] }
+        source_name: { type: string }
+        published_at: { type: [string, "null"], format: date-time }
+        fetched_at: { type: string, format: date-time }
+    OpportunityDetail:
+      type: object
+      required: [id, lane, opp_type, score, score_breakdown, explanation, deadline, status, snoozed_until, featured, created_at, item, events, drafts, draft_kind, drafting]
+      properties:
+        id: { type: string, format: uuid }
+        lane: { $ref: "#/components/schemas/Lane" }
+        opp_type: { type: string }
+        score: { type: number }
+        score_breakdown: { $ref: "#/components/schemas/ScoreBreakdown" }
+        explanation: { type: string }
+        deadline: { type: [string, "null"], format: date-time }
+        status: { type: string, enum: [new, saved, acted, dismissed, snoozed, expired] }
+        snoozed_until: { type: [string, "null"], format: date-time }
+        featured: { type: boolean }
+        created_at: { type: string, format: date-time }
+        item:
+          type: object
+          required: [id, url, title, body, community, author_handle, published_at, fetched_at, metrics, source_name, connector]
+          properties:
+            id: { type: string, format: uuid }
+            url: { type: string }
+            title: { type: [string, "null"] }
+            body: { type: string }
+            community: { type: [string, "null"] }
+            author_handle: { type: [string, "null"] }
+            published_at: { type: [string, "null"], format: date-time }
+            fetched_at: { type: string, format: date-time }
+            metrics: { type: object, additionalProperties: true }
+            source_name: { type: string }
+            connector: { type: string }
+        events:
+          type: array
+          items:
+            type: object
+            required: [event, reason, outcome, created_at]
+            properties:
+              event: { type: string }
+              reason: { type: [string, "null"] }
+              outcome: { type: [string, "null"] }
+              created_at: { type: string, format: date-time }
+        drafts: { type: array, items: { $ref: "#/components/schemas/Draft" }, description: The newest batch of each draft kind }
+        draft_kind: { type: string, description: "The lane's default draft kind (reply, pitch, comment)" }
+        drafting:
+          type: object
+          required: [state, error]
+          properties:
+            state: { type: string, enum: [idle, pending, failed] }
+            error: { type: [string, "null"], description: Last error of a pending (retrying) or failed draft job }
+    Draft:
+      type: object
+      required: [id, kind, variant, subject, body, word_count, word_limit, include_link, portfolio_items, rule_flags, instruction, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [reply, pitch, comment] }
+        variant: { type: string }
+        subject: { type: [string, "null"] }
+        body: { type: string }
+        word_count: { type: integer }
+        word_limit: { type: integer }
+        include_link: { type: boolean, description: True when the draft should link its portfolio piece }
+        portfolio_items:
+          type: array
+          items:
+            type: object
+            required: [id, kind, title, url]
+            properties:
+              id: { type: string, format: uuid }
+              kind: { type: string }
+              title: { type: string }
+              url: { type: [string, "null"] }
+        rule_flags:
+          type: array
+          items:
+            type: object
+            required: [rule, severity, note, source]
+            properties:
+              rule: { type: string }
+              severity: { type: string, enum: [info, warning, block] }
+              note: { type: string }
+              source: { type: string, enum: [community, style, brand, model] }
+        instruction: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+    ResearchJob:
+      type: object
+      required: [id, mode, template, question, status, progress, use_web, error, report_id, created_at, started_at, finished_at, archived, created_by]
+      properties:
+        id: { type: string, format: uuid }
+        mode: { type: string, enum: [chat, deep] }
+        template: { type: [string, "null"] }
+        question: { type: string }
+        status: { type: string, enum: [queued, running, succeeded, failed, cancelled] }
+        progress: { type: object, additionalProperties: true, description: "{phase, steps_planned, steps_done, report_id}" }
+        use_web: { type: boolean }
+        error: { type: [string, "null"] }
+        report_id: { type: [string, "null"], format: uuid }
+        created_at: { type: string, format: date-time }
+        started_at: { type: [string, "null"], format: date-time }
+        finished_at: { type: [string, "null"], format: date-time }
+        archived: { type: boolean }
+        created_by: { type: string, format: uuid }
+    ResearchStep:
+      type: object
+      required: [seq, kind, payload, created_at]
+      properties:
+        seq: { type: integer }
+        kind: { type: string, description: "plan | phase | tool_call | tool_result | thought_summary | assistant | note | verify | limit | warning | answer | report | done" }
+        payload: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+    Cited:
+      type: object
+      required: [marker, source]
+      properties:
+        marker: { type: string }
+        source: { type: object, required: [n, kind, url, title], properties: { n: { type: integer }, kind: { type: string }, raw_item_id: { type: string, format: uuid }, url: { type: string }, title: { type: string } } }
+    ChatMessage:
+      type: object
+      required: [id, role, content, sources, created_at]
+      properties:
+        id: { type: integer }
+        role: { type: string, enum: [user, assistant] }
+        content: { type: string }
+        sources: { type: array, items: { $ref: "#/components/schemas/Cited" } }
+        created_at: { type: string, format: date-time }
+    Chart:
+      type: object
+      required: [id, type, title, x, y, data, dataset]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [line, bar, pie, table] }
+        title: { type: string }
+        x: { type: string }
+        y: { type: array, items: { type: string } }
+        data: { type: array, items: { type: object, additionalProperties: true } }
+        dataset: { type: string, description: The tool dataset the data came from }
+    Citation:
+      type: object
+      required: [marker, raw_item_id, url, title]
+      properties:
+        marker: { type: string }
+        raw_item_id: { type: [string, "null"], format: uuid }
+        url: { type: string }
+        title: { type: [string, "null"] }
+    ReportSummary:
+      type: object
+      required: [id, job_id, title, version, template, citation_count, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        job_id: { type: [string, "null"], format: uuid }
+        title: { type: string }
+        version: { type: integer }
+        template: { type: [string, "null"] }
+        citation_count: { type: integer }
+        created_at: { type: string, format: date-time }
+    Report:
+      type: object
+      required: [id, job_id, title, version, template, markdown, charts, citations, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        job_id: { type: [string, "null"], format: uuid }
+        title: { type: string }
+        version: { type: integer }
+        template: { type: [string, "null"] }
+        markdown: { type: string, description: "Citations as [n]; charts as {{chart:id}} on their own line" }
+        charts: { type: array, items: { $ref: "#/components/schemas/Chart" } }
+        citations: { type: array, items: { $ref: "#/components/schemas/Citation" } }
+        created_at: { type: string, format: date-time }
+    MemoryBankFile:
+      type: object
+      required: [name, content, commit_sha, updated_at]
+      properties:
+        name: { type: string }
+        content: { type: string }
+        commit_sha: { type: [string, "null"] }
+        updated_at: { type: string, format: date-time }
+    KnowledgeSource:
+      type: object
+      required: [id, name, repo, branch, path_prefix, exclude, token, enabled, last_commit, last_synced_at, last_error, status]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        repo: { type: string }
+        branch: { type: string }
+        path_prefix: { type: string }
+        exclude: { type: array, items: { type: string } }
+        token:
+          type: object
+          required: [source, secret_id, env_set]
+          properties:
+            source: { type: string, enum: [secret, env, none] }
+            secret_id: { type: [string, "null"], format: uuid }
+            secret_name: { type: string }
+            last4: { type: string }
+            env: { type: string }
+            env_set: { type: boolean }
+        enabled: { type: boolean }
+        last_commit: { type: [string, "null"] }
+        last_synced_at: { type: [string, "null"], format: date-time }
+        last_error: { type: [string, "null"] }
+        status: { type: string, enum: [idle, syncing, building, error] }
+    KnowledgeInput:
+      type: object
+      required: [repo]
+      properties:
+        name: { type: string }
+        repo: { type: string, description: owner/name }
+        branch: { type: string, description: Default main }
+        path_prefix: { type: string, description: Default docs/ }
+        exclude: { type: array, items: { type: string }, description: Glob patterns relative to path_prefix; omitted = defaults }
+        token: { type: string, description: Read-only token; stored encrypted. Write-only. }
+        token_env: { type: string }
+        clear_token: { type: boolean }
+        enabled: { type: boolean }
+    LaneConfig:
+      type: object
+      required: [lane, weights, daily_quota, freshness_hours, min_score, draft_kind]
+      properties:
+        lane: { $ref: "#/components/schemas/Lane" }
+        weights: { type: object, additionalProperties: { type: number } }
+        daily_quota: { type: integer }
+        freshness_hours: { type: integer }
+        min_score: { type: number }
+        draft_kind: { type: string, enum: [reply, pitch, comment] }

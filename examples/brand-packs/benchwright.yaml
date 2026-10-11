@@ -1,0 +1,123 @@
+# Example brand pack for a fictional developer-tools company. Import it on
+# the Brand page, or with:
+#   seed -brand-example benchwright
+# Everything here can also be edited later on the Brand page.
+name: Benchwright
+
+profile:
+  services:
+    - Open-source evaluation harness for LLM features, prompts, and agents
+    - Regression tests for prompts and models that run in CI on every change
+    - Sampling of production traces into review queues and new test cases
+  value_props:
+    - Catch prompt and model regressions before users do
+    - Works with any model provider, hosted or local
+    - Test cases live in your repo as plain files, reviewed like code
+  differentiators:
+    - Self-hostable and open source; no data leaves your infrastructure
+    - Treats evals as tests, not dashboards
+    - Human review built in for cases an automated judge can't settle
+  tone:
+    voice: Precise, practical, and candid about limits. Show the method and the trade-offs; skip the hype.
+    do:
+      - Answer the engineering question first, with something the reader can try today
+      - Explain trade-offs, such as when an LLM-as-judge is and isn't reliable
+      - Disclose that you work on Benchwright whenever you mention it
+    dont:
+      - Claim specific accuracy or quality improvements
+      - Benchmark numbers without the setup behind them
+      - Disparage other tools by name
+      - Customer counts or testimonials
+      - guaranteed
+      - "10x"
+  targeting:
+    prioritize:
+      - Engineers shipping LLM features who ask how to test prompts, RAG, or agents
+      - Teams debugging regressions after a model or prompt change
+      - People comparing evaluation approaches (LLM-as-judge, golden sets, human review)
+    avoid:
+      - Crypto and trading bots
+      - Job postings and hiring threads
+      - AI funding and valuation news with no engineering angle
+      - Consumer chatbot users asking for prompts
+    geography: []
+    excluded_venues: []
+    topics:
+      - Evals as tests in CI
+      - When LLM-as-judge works, and when it doesn't
+      - Making agents reliable enough to ship
+      - Building golden datasets from production traces
+    media_targets:
+      - AI engineering newsletters and podcasts
+      - Conference talks on shipping LLM features in production
+
+keywords:
+  track:
+    - LLM
+    - evals
+    - AI agent
+    - agents
+    - RAG
+    - prompt
+    - hallucination
+    - benchmark
+    - fine-tuning
+    - LLM-as-judge
+    - Claude
+    - OpenAI
+  negative:
+    - crypto
+    - hiring
+    - NFT
+
+competitors:
+  - name: Langfuse
+    domains: [langfuse.com]
+    notes: Open-source LLM observability and tracing with evaluations.
+  - name: Promptfoo
+    domains: [promptfoo.dev]
+    notes: Open-source CLI for testing prompts and red-teaming.
+  - name: Braintrust
+    domains: [braintrust.dev]
+    notes: Hosted evaluation and logging platform.
+
+icps:
+  - name: AI product engineer
+    industries: [Software, SaaS]
+    company_sizes: [11-50, 51-200]
+    roles: [Software engineer, ML engineer, Tech lead]
+    pain_points:
+      - A prompt or model change quietly breaks behavior that used to work
+      - No repeatable way to tell whether a change made things better
+      - Manual spot checks don't scale past a demo
+    buying_signals:
+      - Asks how to test or evaluate an LLM feature
+      - Mentions flaky agents or hallucinations in production
+  - name: ML platform lead
+    industries: [Software, Fintech, Healthcare]
+    company_sizes: [201-1000, 1000+]
+    roles: [Head of ML, Platform engineering lead]
+    pain_points:
+      - Several teams ship LLM features with no shared quality bar
+      - Data can't leave the company's infrastructure
+    buying_signals:
+      - Evaluating self-hosted LLM tooling
+      - Standardizing how teams test models before release
+
+portfolio:
+  - kind: blog_post
+    title: "Evals are tests: running LLM regression checks in CI"
+    url: https://benchwright.example/blog/evals-in-ci
+    summary: How to turn real failures into test cases that run on every prompt or model change, with examples for RAG and tool-calling agents.
+    tags:
+      industries: [Software]
+      services: [Regression tests]
+      problems: [Prompt regressions, Model upgrades]
+  - kind: blog_post
+    title: When an LLM judge is wrong, and how to tell
+    url: https://benchwright.example/blog/llm-judge
+    summary: Measuring agreement between an LLM-as-judge and human reviewers, the failure modes we see most, and when to fall back to human review.
+    tags:
+      industries: [Software]
+      services: [Evaluation harness]
+      problems: [Unreliable automated grading]

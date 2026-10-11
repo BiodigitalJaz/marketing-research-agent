@@ -1,0 +1,13 @@
+# Example: expose the web UI on a NodePort (clusters without an ingress
+# controller). Copy this overlay outside the repo for your own cluster and
+# adjust: images (registry, tags), config, pull secrets.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+patches:
+  - target: { kind: Service, name: web }
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: NodePort

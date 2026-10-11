@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  labels: { app.kubernetes.io/name: worker }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: worker }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: worker }
+    spec:
+      # Longer than worker.shutdown_timeout so River can drain in-flight jobs.
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: worker
+          image: research-agent-worker
+          envFrom: [{ secretRef: { name: research-agent-env } }]
+          env:
+            - { name: RESEARCH_AGENT_CONFIG, value: /etc/marketing-research-agent/config.yaml }
+          volumeMounts:
+            - { name: config, mountPath: /etc/marketing-research-agent, readOnly: true }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { memory: 512Mi }
+      volumes:
+        - name: config
+          configMap: { name: research-agent-config }

@@ -1,0 +1,90 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod, check-latest: true }
+      - name: go vet
+        run: go vet ./...
+      - name: staticcheck
+        uses: dominikh/staticcheck-action@v1
+        with: { install-go: false, version: "2026.2.1" }
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with: { version: v2.14.0 }
+      - name: sqlc generated code is current
+        run: |
+          go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
+          sqlc diff
+      # Integration tests use testcontainers; Docker is available on ubuntu runners.
+      - name: go test
+        run: go test -race ./...
+
+  no-posting:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/check_no_posting_test.sh
+      - run: scripts/check_no_posting.sh
+
+  k8s:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod, check-latest: true }
+      - run: go install github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0
+      - run: |
+          scripts/k8s_validate.sh deploy/k8s/overlays/example-nodeport
+          scripts/k8s_validate.sh deploy/k8s/overlays/example-ingress
+
+  licenses:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod, check-latest: true }
+      - uses: pnpm/action-setup@v6
+        with: { package_json_file: web/package.json }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: cd web && pnpm install --frozen-lockfile
+      - run: go install github.com/google/go-licenses/v2@v2.0.1
+      - run: scripts/check_licenses.sh
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run: { working-directory: web }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+        with: { package_json_file: web/package.json }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: API client is current
+        run: pnpm gen:api && git diff --exit-code src/lib/api/schema.d.ts
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm build

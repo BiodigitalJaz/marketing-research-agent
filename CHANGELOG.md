@@ -1,0 +1,16 @@
+# Changelog
+
+## v0.1.0 (2026-10-11)
+
+First public release.
+
+- **Collection:** monitors on a schedule over RSS/Atom (including Google Alerts), Hacker News, and web search (SearXNG, Brave, Google Programmable Search), with keyword matching, negative keywords, and per-source community rules.
+- **Inbox:** filtering, de-duplication, LLM classification and scoring into lanes (inbound, media, thought leadership), a daily featured list, triage with dismissal reasons, and outcome tracking.
+- **Drafts:** reply, pitch, and comment drafts in the brand's voice, checked against the brand's banned claims and each community's rules. Always labelled for human review; the app never posts.
+- **Research:** chat and deep research with numbered citations, key claims checked against what the cited sources said, charts, live progress, Markdown export, an optional internal knowledge base synced from GitHub docs, and a generated memory bank.
+- **LLM layer:** Anthropic and any OpenAI-compatible server as peers, per-task routes with fallback, local-only mode, versioned prompts, read-only MCP tools, and a playground.
+- **Setup:** first-run setup in the browser, a Getting started checklist, brand packs (with a fictional example), users and roles.
+- **Operations:** Docker Compose and Kubernetes manifests, encrypted secrets with key rotation, audit log, retention of collected items.
+
+Known limitations are listed in [Deployment](docs/deployment.md#known-limitations).
+

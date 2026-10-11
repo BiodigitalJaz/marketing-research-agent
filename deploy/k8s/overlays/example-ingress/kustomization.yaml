@@ -1,0 +1,8 @@
+# Example: serve the web UI through an Ingress with TLS. Set the host, the
+# ingress class, and the TLS secret (for example from cert-manager), and set
+# server.base_url to the https URL in your config so cookies are Secure.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+  - ingress.yaml

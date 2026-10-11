@@ -1,0 +1,22 @@
+/bin/
+/config.yaml
+.env
+.env.*
+!.env.example
+.deploy.env
+.deploy/
+*.pem
+*.key
+kubeconfig
+*.test
+coverage.out
+web/node_modules/
+web/.next/
+web/out/
+web/playwright-report/
+web/test-results/
+
+# Database backups
+*.dump
+*.sql.gz
+backups/
