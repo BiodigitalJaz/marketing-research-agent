@@ -1,4 +1,4 @@
-FROM node:24-alpine AS deps
+FROM node:25-alpine AS deps
 WORKDIR /app
 RUN npm install -g pnpm@9.15.9
 COPY package.json pnpm-lock.yaml ./
@@ -11,7 +11,7 @@ ENV API_URL=$API_URL NEXT_TELEMETRY_DISABLED=1
 COPY . .
 RUN pnpm build
 
-FROM node:24-alpine AS run
+FROM node:25-alpine AS run
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
 COPY --from=build --chown=node:node /app/.next/standalone ./
