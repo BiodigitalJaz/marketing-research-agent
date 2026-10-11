@@ -15,7 +15,7 @@ jobs:
   go:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with: { go-version-file: go.mod, check-latest: true }
       - name: go vet
@@ -37,14 +37,14 @@ jobs:
   no-posting:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: scripts/check_no_posting_test.sh
       - run: scripts/check_no_posting.sh
 
   k8s:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with: { go-version-file: go.mod, check-latest: true }
       - run: go install github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0
@@ -55,7 +55,7 @@ jobs:
   licenses:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with: { go-version-file: go.mod, check-latest: true }
       - uses: pnpm/action-setup@v6
@@ -74,7 +74,7 @@ jobs:
     defaults:
       run: { working-directory: web }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
         with: { package_json_file: web/package.json }
       - uses: actions/setup-node@v7
