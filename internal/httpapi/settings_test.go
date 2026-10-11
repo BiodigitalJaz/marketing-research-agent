@@ -303,3 +303,30 @@ func TestPlaygroundRunsMCPToolLoop(t *testing.T) {
 		t.Fatalf("playground model_runs = %d, want 2", runs)
 	}
 }
+
+func TestPlaygroundRejectsMalformedMessages(t *testing.T) {
+	s := newSettingsEnv(t)
+	s.call(http.MethodPost, "/settings/providers", map[string]any{"id": "local", "kind": "openai_compat", "base_url": "http://192.168.0.10:1234/v1", "is_local": true}, http.StatusCreated)
+	s.call(http.MethodPost, "/settings/models", map[string]any{"provider_id": "local", "model": "qwen", "enabled": true}, http.StatusOK)
+	s.fakes["local"] = fake.New("local", fake.Text("unused"))
+	tests := []struct {
+		name string
+		msg  map[string]any
+		want string
+	}{
+		{"content instead of text", map[string]any{"role": "user", "content": "hi"}, `needs text`},
+		{"blank text", map[string]any{"role": "user", "text": "   "}, `needs text`},
+		{"unknown role", map[string]any{"role": "system", "text": "hi"}, `role must be user or assistant`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			code, body := s.admin.do(http.MethodPost, "/settings/playground", map[string]any{"provider_id": "local", "model": "qwen", "messages": []map[string]any{tt.msg}})
+			if code != http.StatusBadRequest || !strings.Contains(string(body), tt.want) {
+				t.Errorf("playground = %d %s, want 400 mentioning %q", code, body, tt.want)
+			}
+		})
+	}
+	if n := len(s.fakes["local"].Requests()); n != 0 {
+		t.Errorf("malformed requests must not reach the model; it got %d", n)
+	}
+}

@@ -355,12 +355,23 @@ func (s *server) handleRunMonitor(c *gin.Context) {
 	ctx := c.Request.Context()
 	var jobID int64
 	err = s.inTx(ctx, func(tx pgx.Tx, q *store.Queries) error {
-		if _, err := q.GetMonitor(ctx, store.GetMonitorParams{WorkspaceID: m.WorkspaceID, ID: id}); err != nil {
+		mon, err := q.GetMonitor(ctx, store.GetMonitorParams{WorkspaceID: m.WorkspaceID, ID: id})
+		if err != nil {
 			return err
 		}
 		res, err := s.jobs.InsertTx(ctx, tx, jobs.CollectMonitorArgs{WorkspaceID: m.WorkspaceID, MonitorID: id}, nil)
 		if err != nil {
 			return err
+		}
+		// This run counts as the scheduled one: an enabled monitor that was
+		// due now (just turned on) would otherwise start a second run moments
+		// later, and its progress would hide this one's.
+		if mon.Enabled {
+			if next, err := jobs.NextRun(mon.ScheduleCron, time.Now()); err == nil {
+				if err := q.SetMonitorNextRun(ctx, store.SetMonitorNextRunParams{WorkspaceID: m.WorkspaceID, ID: id, NextRunAt: &next}); err != nil {
+					return err
+				}
+			}
 		}
 		jobID = res.Job.ID
 		s.audit(ctx, q, m.WorkspaceID, &u.ID, "monitor.run", "monitor", id.String(), nil)

@@ -471,8 +471,9 @@ func (r *run) deep(ctx context.Context) error {
 	r.step(ctx, StepPlan, map[string]any{"title": title, "sub_questions": subqs}, runID)
 	r.setProgress(ctx, "phase", "gather", "steps_planned", len(subqs), "steps_done", 0)
 
-	// 2. Gather: each sub-question gets a fresh history and a share of the
-	// remaining steps; the notebook (and so source numbers) is shared.
+	// 2. Gather: each sub-question gets a fresh history and an even share of
+	// the remaining steps and time, so a slow model still covers every
+	// sub-question; the notebook (and so source numbers) is shared.
 	q := store.New(r.s.Pool)
 	system, promptID, err := prompts.Active(ctx, q, r.ws, "research", data)
 	if err != nil {
@@ -492,6 +493,7 @@ func (r *run) deep(ctx context.Context) error {
 		share := max(2, stepsLeft/(len(subqs)-i))
 		l := r.loop(min(share, stepsLeft))
 		l.Call.PromptID = promptID
+		l.Deadline = subQuestionDeadline(time.Now(), r.deadline, len(subqs)-i)
 		r.step(ctx, StepPhase, map[string]any{"phase": "gather", "index": i + 1, "of": len(subqs), "sub_question": sq}, nil)
 		res, err := l.Run(ctx, system, []llm.Message{llm.UserText(fmt.Sprintf(
 			"Overall question: %s\n\nSub-question %d of %d: %s\n\nFirst search for evidence with the tools (search_corpus, and the web if available). Then write concise notes: the findings, each followed by the source numbers the tools showed, like [3], and what remains unclear. Cite only numbers that appear in tool results. If the tools find nothing relevant, write \"No evidence found.\" Notes only; no introduction.",
@@ -500,7 +502,9 @@ func (r *run) deep(ctx context.Context) error {
 			return err
 		}
 		stepsLeft -= res.Steps
-		if res.Stopped == agent.StopDeadline || res.Stopped == agent.StopBudget {
+		// A sub-question that used up its own time share still wrote notes;
+		// only the overall deadline or the token budget ends gathering.
+		if res.Stopped == agent.StopBudget || (res.Stopped == agent.StopDeadline && time.Now().After(r.deadline)) {
 			stopped = res.Stopped
 		}
 		// Citations to sources the tools never showed are removed here, so
@@ -566,6 +570,18 @@ func (r *run) deep(ctx context.Context) error {
 	}
 	md = ensureTitle(md, title) + keyClaimsSection(claims) + unsupportedSection(unsupported)
 	return r.saveReport(ctx, title, md, runID)
+}
+
+// minSubQuestionTime is the least time a sub-question is given, even when
+// that runs past the overall deadline by a little; less is not enough for a
+// local model to search once and write notes.
+const minSubQuestionTime = 2 * time.Minute
+
+// subQuestionDeadline gives the next of remaining sub-questions an even share
+// of the time left before deadline (at least minSubQuestionTime).
+func subQuestionDeadline(now, deadline time.Time, remaining int) time.Time {
+	share := deadline.Sub(now) / time.Duration(max(remaining, 1))
+	return now.Add(max(share, minSubQuestionTime))
 }
 
 // verifyTimeout is verification's share of the time left on ctx.

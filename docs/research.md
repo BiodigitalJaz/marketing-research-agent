@@ -53,7 +53,7 @@ Deep research produces a report under **Reports**: the Markdown text, charts, an
 | Agent steps | 14 | 40 |
 | Time | 8 minutes | 15 minutes to gather, plus up to 10 minutes to verify and write |
 
-Admins can change max agent steps and the token budget per route, and the deep research time limit (up to 30 minutes); chat always stops at 8 minutes. If the agent repeats an identical tool call, it gets a notice instead of a second result. On long runs, older tool results are summarized as the model's context window fills, so models with small context windows can still finish; more context gives better answers.
+Deep research splits its steps and its gathering time evenly across the sub-questions it planned, so each one is researched even with a slow model; a sub-question that runs out of its share writes notes from what it found. Admins can change max agent steps and the token budget per route, and the deep research time limit (up to 30 minutes); chat always stops at 8 minutes. If the agent repeats an identical tool call, it gets a notice instead of a second result. On long runs, older tool results are summarized as the model's context window fills, so models with small context windows can still finish; more context gives better answers.
 
 ## Tips
 
