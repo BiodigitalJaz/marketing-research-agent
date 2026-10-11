@@ -65,4 +65,4 @@ Use **Discover on \<provider\>** in Settings → Models to list the models your 
 - **Research quality depends on search as much as on the model.** The bundled SearXNG uses only engines whose terms allow automated queries (encyclopedias, academic indexes, Stack Exchange, GitHub). For vendor documentation, blogs, and news, configure Brave or Google Programmable Search in Settings, or ask questions your collected items can answer.
 - **Review citations.** Deep research checks each key claim against excerpts of its cited sources and lists unsupported claims separately, but the check is a model's judgment, and a small model is a looser judge.
 
-See also [Settings](settings.md) for every model option and [Deployment](deployment.md#sizing) for sizing the rest of the stack.
+See also [Settings](settings.md) for every model option, [Deployment](deployment.md#sizing) for sizing the rest of the stack, and [tested configurations](testing.md#tested-configurations) for setups verified end to end.

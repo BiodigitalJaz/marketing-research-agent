@@ -129,7 +129,8 @@ The [runbook](docs/runbook.md) covers fresh installs, upgrades, backups, rollbac
 | [Research and reports](docs/research.md) | [Configuration](docs/configuration.md): every setting |
 | [The Brand page](docs/brand.md) and [brand packs](docs/brand-packs.md) | [Architecture](docs/architecture.md): how it fits together |
 | [Monitors and sources](docs/sources.md) | [Security policy](SECURITY.md) |
-| [Settings](docs/settings.md) | [Changelog](CHANGELOG.md) |
+| [Settings](docs/settings.md) | [Testing and tested configurations](docs/testing.md) |
+| | [Changelog](CHANGELOG.md) |
 | [The memory bank](docs/memory-bank.md) | [Choosing models](docs/models.md): tasks, hardware, settings |
 
 ## Development
