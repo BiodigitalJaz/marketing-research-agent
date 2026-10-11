@@ -1,10 +1,15 @@
 # Changelog
 
-## Unreleased
+## v0.1.1 (2026-10-11)
+
+Fixes from an end-to-end test of v0.1.0 on Kubernetes with a local model, plus dependency and security updates.
 
 - **Research:** deep research gives each planned sub-question an even share of the gathering time, so a slow local model researches every sub-question instead of skipping the last ones.
 - **Monitors:** Run now on an enabled monitor moves its next scheduled run to the following cron tick, so turning a monitor on and clicking Run now no longer starts two runs whose progress overlaps.
 - **Playground:** messages with no text or an unknown role are rejected with a clear error instead of reaching the model empty.
+- **Deploy tooling:** `make deploy-verify` reads logs from each deployment's newest pod, so right after a rollout it no longer reports the old pod's migrations or errors.
+- **Dependencies:** Go and GitHub Actions updates, including security fixes in `moby/sys/user` (CVE-2026-61801), `quic-go`, and `moby/go-archive`. The `shadcn` CLI moved to the web app's dev dependencies: it generates components at development time and was never part of the running app.
+- **Docs:** [Testing and tested configurations](docs/testing.md).
 
 ## v0.1.0 (2026-10-11)
 

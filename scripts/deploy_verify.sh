@@ -25,8 +25,18 @@ check "all pods running${not_ready:+ (not: $not_ready)}" "[ -z \"\$not_ready\" ]
 restarts="$(kubectl -n "$ns" get pods --no-headers | awk '$4 != "0" {print $1"="$4}')"
 check "no container restarts${restarts:+ ($restarts)}" "[ -z \"\$restarts\" ]"
 
-migrations="$(kubectl -n "$ns" logs deploy/api -c migrate 2>/dev/null | grep -oE '"source":"[^"]+"' | sed -E 's/.*"([^"]+)"$/\1/' | tr '\n' ' ' || true)"
-up_to_date="$(kubectl -n "$ns" logs deploy/api -c migrate 2>/dev/null | grep -c 'migrations up to date' || true)"
+# Logs come from each deployment's newest pod that isn't shutting down: right
+# after a rollout, `logs deploy/<name>` can pick the old pod.
+newest_pod() {
+  kubectl -n "$ns" get pods -l "app.kubernetes.io/name=$1" --sort-by=.metadata.creationTimestamp \
+    -o custom-columns=NAME:.metadata.name,DEL:.metadata.deletionTimestamp --no-headers 2>/dev/null \
+    | awk '$2 == "<none>" {name=$1} END {print name}'
+}
+api_pod="pod/$(newest_pod api)"
+worker_pod="pod/$(newest_pod worker)"
+
+migrations="$(kubectl -n "$ns" logs "$api_pod" -c migrate 2>/dev/null | grep -oE '"source":"[^"]+"' | sed -E 's/.*"([^"]+)"$/\1/' | tr '\n' ' ' || true)"
+up_to_date="$(kubectl -n "$ns" logs "$api_pod" -c migrate 2>/dev/null | grep -c 'migrations up to date' || true)"
 check "migrations ran (applied this rollout: ${migrations:-none})" "[ '$up_to_date' -ge 1 ]"
 
 ready="$(curl -s -m 10 "$url/api/v1/ready" || true)"
@@ -35,9 +45,9 @@ setup="$(curl -s -m 10 "$url/api/v1/setup/status" || true)"
 check "setup status answers ($setup)" "[[ '$setup' == *needs_setup* ]]"
 [[ "$setup" == *'"needs_setup":true'* ]] && echo "  note  no users yet: first-run setup is open; the setup token is in: kubectl -n $ns logs deploy/api -c api | grep setup_token"
 
-werr="$(kubectl -n "$ns" logs deploy/worker 2>/dev/null | grep -c '"level":"ERROR"' || true)"
+werr="$(kubectl -n "$ns" logs "$worker_pod" 2>/dev/null | grep -c '"level":"ERROR"' || true)"
 check "no worker errors since start ($werr)" "[ '$werr' -eq 0 ]"
-aerr="$(kubectl -n "$ns" logs deploy/api -c api 2>/dev/null | grep -c '"level":"ERROR"' || true)"
+aerr="$(kubectl -n "$ns" logs "$api_pod" -c api 2>/dev/null | grep -c '"level":"ERROR"' || true)"
 check "no api errors since start ($aerr)" "[ '$aerr' -eq 0 ]"
 
 if [ "$failed" -ne 0 ]; then echo "VERIFY FAILED (see docs/runbook.md, Troubleshooting and Rollback)"; exit 1; fi
