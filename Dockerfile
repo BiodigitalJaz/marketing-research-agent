@@ -1,5 +1,5 @@
 # Builds the Go binaries (api, worker, migrate). Select one with --target.
-FROM golang:1.26-alpine AS build
+FROM golang:1.27-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
